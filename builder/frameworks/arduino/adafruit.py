@@ -68,7 +68,7 @@ env.Append(
 
     CPPDEFINES=[
         ("F_CPU", "$BOARD_F_CPU"),
-        ("ARDUINO", "10813"),
+        ("ARDUINO", 10813),
         "ARDUINO_ARCH_NRF54",
         # Bluefruit54Lib's BLEDis bakes this into the BLE Device Info
         # Service as Firmware Revision. Arduino IDE injects it from
