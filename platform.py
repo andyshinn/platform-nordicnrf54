@@ -119,7 +119,7 @@ class Nordicnrf54Platform(PlatformBase):
                         "-c",
                         "transport select hla_swd; set WORKAREASIZE 0x4000"
                     ])
-                server_args.extend(["-f", "target/nrf54l.cfg"])
+                server_args.extend(["-f", "target/nordic/nrf54l.cfg"])
                 debug["tools"][link] = {
                     "server": {
                         "package": "tool-openocd",
