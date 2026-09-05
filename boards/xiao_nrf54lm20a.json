@@ -28,11 +28,11 @@
   ],
   "debug": {
     "default_tools": [
-      "jlink"
+      "cmsis-dap"
     ],
     "jlink_device": "nRF54LM20A_M33",
     "onboard_tools": [
-      "jlink"
+      "cmsis-dap"
     ]
   },
   "frameworks": [
@@ -45,6 +45,7 @@
     "speed": 115200,
     "protocol": "nrfutil",
     "protocols": [
+      "cmsis-dap",
       "jlink",
       "nrfjprog",
       "nrfutil"
