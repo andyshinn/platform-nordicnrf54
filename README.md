@@ -2,7 +2,7 @@
 
 [![Build Status](https://github.com/caveman99/platform-nordicnrf54/workflows/Examples/badge.svg)](https://github.com/caveman99/platform-nordicnrf54/actions)
 
-The nRF54L Series features Cortex-M33 processors at 128 MHz with RRAM-based non-volatile memory, providing a highly capable platform for Bluetooth Low Energy applications. Supported MCUs: nRF54L05, nRF54L10, nRF54L15.
+The nRF54L Series features Cortex-M33 processors at 128 MHz with RRAM-based non-volatile memory, providing a highly capable platform for Bluetooth Low Energy applications. Supported MCUs: nRF54L05, nRF54L10, nRF54L15, nRF54LM20A.
 
 This is an out-of-tree PlatformIO platform — it is not published in the
 PlatformIO Registry. Install it directly from this repository (see Usage
@@ -36,6 +36,7 @@ and the DFU bootloader from
 | `nrf54l05dk` | nRF54L05 |
 | `xiao_nrf54l15` | nRF54L15 |
 | `xiao_nrf54l15_sense` | nRF54L15 |
+| `xiao_nrf54lm20a` | nRF54LM20A |
 
 ## Examples
 
