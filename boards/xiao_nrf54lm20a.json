@@ -1,0 +1,58 @@
+{
+  "build": {
+    "arduino": {
+      "ldscript": "nrf54lm20a_s145_v10.ld"
+    },
+    "core": "nRF5",
+    "cpu": "cortex-m33",
+    "extra_flags": "-DARDUINO_XIAO_NRF54LM20A -DNRF54LM20A_XXAA",
+    "f_cpu": "128000000L",
+    "mcu": "nrf54lm20",
+    "mcu_define": "NRF54LM20A_XXAA",
+    "variant": "xiao_nrf54lm20a",
+    "bsp": {
+      "name": "adafruit"
+    },
+    "softdevice": {
+      "sd_flags": "-DS145",
+      "sd_name": "s145",
+      "sd_version": "10.0.1",
+      "sd_fwid": "0x310D"
+    },
+    "bootloader": {
+      "settings_addr": "0x1FF000"
+    }
+  },
+  "connectivity": [
+    "bluetooth"
+  ],
+  "debug": {
+    "default_tools": [
+      "jlink"
+    ],
+    "jlink_device": "nRF54LM20A_M33",
+    "onboard_tools": [
+      "jlink"
+    ]
+  },
+  "frameworks": [
+    "arduino"
+  ],
+  "name": "Seeed XIAO nRF54LM20A",
+  "upload": {
+    "maximum_ram_size": 505856,
+    "maximum_size": 1859584,
+    "speed": 115200,
+    "protocol": "nrfutil",
+    "protocols": [
+      "jlink",
+      "nrfjprog",
+      "nrfutil"
+    ],
+    "use_1200bps_touch": true,
+    "require_upload_port": true,
+    "wait_for_upload_port": true
+  },
+  "url": "https://www.seeedstudio.com/",
+  "vendor": "Seeed"
+}
