@@ -20,7 +20,7 @@
       "sd_fwid": "0x310D"
     },
     "bootloader": {
-      "settings_addr": "0x1FF000"
+      "settings_addr": "0x1D9000"
     }
   },
   "connectivity": [
@@ -50,7 +50,8 @@
       "nrfjprog",
       "nrfutil"
     ],
-    "use_1200bps_touch": true,
+    "probe_rs_chip": "nRF54LM20A",
+    "use_1200bps_touch": false,
     "require_upload_port": true,
     "wait_for_upload_port": true
   },
