@@ -242,6 +242,8 @@ else:
 AlwaysBuild(env.Alias("nobuild", target_firm))
 target_buildprog = env.Alias("buildprog", target_firm, target_firm)
 
+target_dfu = None
+
 if "DFUBOOTHEX" in env:
     env.Append(
         BOOT_SETTING_ADDR=board.get("build.bootloader.settings_addr", "0x7F000")
@@ -257,12 +259,14 @@ if "DFUBOOTHEX" in env:
     else:
         dfu_app_hex = env.ElfToHex(join("$BUILD_DIR", "${PROGNAME}"), target_elf)
 
+    target_dfu = env.PackageDfu(
+        join("$BUILD_DIR", "${PROGNAME}"),
+        dfu_app_hex,
+    )
+
     env.AddPlatformTarget(
         "dfu",
-        env.PackageDfu(
-            join("$BUILD_DIR", "${PROGNAME}"),
-            dfu_app_hex,
-        ),
+        target_dfu,
         target_firm,
         "Generate DFU Image",
     )
@@ -508,7 +512,15 @@ elif upload_protocol == "custom":
 else:
     sys.stderr.write("Warning! Unknown upload protocol %s\n" % upload_protocol)
 
-env.AddPlatformTarget("upload", target_firm, upload_actions, "Upload")
+# adafruit-nrfutil's serial DFU consumes the .zip package, not a raw hex.
+# With a SoftDevice present target_firm is the SD-merged firmware.hex (the
+# image you flash over SWD), so uploading that fed a hex to `dfu serial` and
+# died in ZipFile with "File is not a zip file". Hand it the DFU package.
+upload_source = target_firm
+if "nrfutil" == upload_protocol and target_dfu is not None:
+    upload_source = target_dfu
+
+env.AddPlatformTarget("upload", upload_source, upload_actions, "Upload")
 
 env.AddPlatformTarget(
     "erase", None, env.VerboseAction("$ERASECMD", "Erasing..."), "Erase Flash")
