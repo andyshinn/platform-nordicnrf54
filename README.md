@@ -51,30 +51,46 @@ enumerates as `Seeed Studio XIAO nRF54LM20A CMSIS-DAP` (VID `0x2886`, PID
 `pio run -t upload` has no port to talk to until the bootloader is
 installed once.
 
-To install it, flash `firmware.hex` (application + SoftDevice, already
-merged by the build) over SWD using either:
+To install it, flash the bootloader over SWD using either:
 
 - **An external J-Link / Nordic probe** on the SWD pads:
-  `upload_protocol = jlink` or `nrfjprog`, and `pio run -t bootloader`
-  to write the DFU bootloader (needs a bootloader release tag, whose
-  `release/*.hex` files are not present on branches).
-- **pyocd over the onboard CMSIS-DAP probe**, run by hand:
+  `upload_protocol = jlink` or `nrfjprog`. This is the path the nRF54L DKs
+  use — they carry an on-board J-Link — and it is unchanged.
+- **probe-rs over the onboard CMSIS-DAP probe.** Set
+
+  ```ini
+  upload_protocol = cmsis-dap
+  ```
+
+  and the `bootloader`, `softdevice`, `erase` and `upload` targets all run
+  through probe-rs instead of nrfjprog:
 
   ```
-  pyocd flash -t nrf54lm20a .pio/build/xiao_nrf54lm20a/firmware.hex
+  pio run -t bootloader     # SoftDevice + bootloader, in one chip erase
   ```
 
-  This platform does not wire pyocd up, and two caveats apply. pyocd needs
-  a custom nRF54LM20A target definition — the part is not in upstream
-  pyocd, and PlatformIO's `tool-pyocd` package is pyocd 0.36, which has no
-  nRF54L family at all; pyocd ≥ 0.44.1 plus an injected target is what
-  works in practice (see `lolren/nrf54-arduino-core` for a worked example).
-  The known-good flash algorithm for this part also forces a whole-chip
-  erase, so each flash wipes the SoftDevice and bootloader along with the
-  application.
+probe-rs must be on `PATH` — install it from <https://probe.rs>. Use
+**probe-rs ≥ 0.32**, which lists `nRF54LM20A` in `probe-rs chip list`. It
+is not declared as a platform package, the same way `nrfjprog` is not.
+
+`-t bootloader` is deliberately a **single** operation on this path. The
+part re-locks debug access on every power cycle while no valid firmware is
+running, and regaining access costs an erase-all — so flashing the
+bootloader and then the SoftDevice incrementally loses the first write.
+The target therefore merges the SoftDevice, the bootloader and the
+bootloader settings word into one `bootstrap.hex` with `srec_cat` and
+flashes it with a single `--chip-erase`. Use `-t softdevice` on its own
+only on a part that is already unlocked and running.
+
+pyocd is not used. Its built-in `nrf54lm20a` target maps no region for the
+UICR words the bootloader hex writes at `0x10001014`, so `pyocd flash`
+faults partway through the bootloader image.
 
 Once the bootloader is installed, `nrfutil` DFU works normally and is the
-intended day-to-day path.
+intended day-to-day path. `use_1200bps_touch` is `false` for
+`xiao_nrf54lm20a`: the SAMD11 owns USB, so touching its CDC port at 1200
+baud cannot reset the nRF54LM20A into DFU. Enter DFU with a double-tap of
+reset instead.
 
 ### Debugging
 
