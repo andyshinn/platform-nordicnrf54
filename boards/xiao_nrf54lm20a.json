@@ -56,7 +56,8 @@
     "use_1200bps_touch": false,
     "require_upload_port": false,
     "wait_for_upload_port": false,
-    "pyocd_target": "nrf54lm20a"
+    "pyocd_target": "nrf54lm20a",
+    "rramc_base": "0x5004E000"
   },
   "url": "https://www.seeedstudio.com/",
   "vendor": "Seeed"

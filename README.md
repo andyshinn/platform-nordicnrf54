@@ -64,19 +64,19 @@ work. The two are deliberately disjoint in RRAM — `-t bootloader` owns
 `0x1DA800+` — so an upload never disturbs the bootloader.
 
 `-t bootloader` is a **single** operation. The part re-locks debug access on
-every power cycle while no valid firmware is running, and regaining access
-costs an erase-all — so flashing the bootloader and then the SoftDevice
-incrementally loses the first write. The target merges the SoftDevice, the
-bootloader and the bootloader settings word (first word `0x00000001`, which
-disables the CRC check) into one `bootstrap.hex` with `srec_cat` and flashes
-it after a single chip erase. Use `-t softdevice` on its own only on a part
-that is already unlocked and running.
+every power cycle while no valid firmware is running, so flashing the
+bootloader and then the SoftDevice as two separate sessions can lose the
+first write. The target merges the SoftDevice, the bootloader and the
+bootloader settings word (first word `0x00000001`, which disables the CRC
+check) into one `bootstrap.hex` with `srec_cat` and writes that in one
+session. Use `-t softdevice` on its own only on a part that is already
+unlocked and running.
 
 ### Which tool drives the probe
 
 | `upload_protocol` | Tool | Notes |
 |---|---|---|
-| `cmsis-dap` (default on `xiao_nrf54lm20a`), `pyocd` | pyocd | Needs `upload.pyocd_target` in the board JSON |
+| `cmsis-dap` (default on `xiao_nrf54lm20a`), `pyocd` | pyocd | Needs `upload.pyocd_target` and `upload.rramc_base` in the board JSON |
 | `probe-rs` | probe-rs | Needs `upload.probe_rs_chip`; probe-rs ≥ 0.32 on `PATH` |
 | `jlink`, `nrfjprog` | J-Link / nrfjprog | External probe on the SWD pads; the DK path, unchanged |
 | `nrfutil` | adafruit-nrfutil | Serial DFU, once the bootloader is installed |
@@ -84,21 +84,45 @@ that is already unlocked and running.
 Neither pyocd nor probe-rs is declared as a platform package, the same way
 `nrfjprog` is not.
 
-#### pyocd is driven page-at-a-time, not through its CLI
+#### pyocd's flash algorithm is bypassed entirely
 
-pyocd 0.45.1's `nrf54lm20a` flash algorithm hardfaults — `target was not
-halted as expected after calling flash algorithm routine (IPSR=3)` — as
-soon as more than one page is programmed per flash-algorithm invocation.
-Single pages always succeed, and `-O enable_double_buffering=False` does not
-help, so `pyocd flash` / `pyocd load` cannot be used on this part.
+**Do not use `pyocd flash` / `pyocd load` on an nRF54L.** pyocd 0.45.1's
+flash algorithm for this family silently corrupts **24 bytes at offset
+`0x238` of every page it programs**. Writing 4096 bytes of `0xAA` into each
+of `0x00000000`, `0x00010000`, `0x001D0000` and `0x001D1000` reads back as
+`0xAA` everywhere except a constant window at `+0x238..+0x24F` holding
+`01000000 00000000 00000000 00000000 00000000 01000020` — same offset, same
+bytes, whatever the page address, and with `cache.enable_memory: False` so it
+is not a read-cache artifact. The CPU executes those bytes, which is exactly
+how a freshly flashed bootloader HardFaults. `erase_sector()` does not clear
+the window. The same broken target support also hardfaults — `target was not
+halted as expected after calling flash algorithm routine (IPSR=3)` — as soon
+as more than one page is programmed per flash-algorithm invocation.
 
-[`builder/pyocd_flash.py`](builder/pyocd_flash.py) works around it: it parses
-the hex itself, groups it into 4096-byte pages, and programs them one page
-per `program_page()` call (with retries) inside a *single* debug session. It
-also pins the SWD clock to 1 MHz — at pyocd's default clock the SAMD11
-returns intermittent `SWD/JTAG communication failure (No ACK)`, especially in
-the moments right after a chip erase. Override it with
+[`builder/pyocd_flash.py`](builder/pyocd_flash.py) therefore does not touch
+the flash algorithm at all. nRF54L non-volatile memory is RRAM, not flash:
+it needs no erase and is directly writable over the debug port. The helper
+halts the core, sets `RRAMC.CONFIG.WEN`, writes the image straight into RRAM
+with `write_memory_block8` in whole 0xFF-padded 4096-byte pages, commits the
+RRAMC write buffer, and clears `WEN` again. Register offsets come from
+`NRF_RRAMC_Type` in the MDK headers and are the same family-wide; the base
+address is not (`0x5004B000` on nRF54L05/10/15, `0x5004E000` on nRF54LM20A),
+so it comes from the board JSON's `upload.rramc_base`.
+
+**Read-back verification is mandatory and cannot be turned off.** Every page
+written is read back and compared byte for byte, with the session's memory
+cache disabled so the reads reach the target; any mismatch fails the target
+and skips the reset. A flasher that silently writes the wrong bytes is worse
+than one that fails loudly — that is the trap the flash algorithm above set.
+
+The SWD clock is pinned to 1 MHz: at pyocd's default the SAMD11 returns
+intermittent `SWD/JTAG communication failure (No ACK)`. Override with
 `board_upload.pyocd_frequency` if needed.
+
+`pio run -t erase` still exists and does a debug-port erase-all, but RRAM
+needs no erase before being written, so `-t bootloader` and `-t upload` do
+not use it. It is only useful for wiping a part or recovering one that has
+re-locked its debug access.
 
 The script finds pyocd on its own: `$PYOCD_PYTHON` (or
 `board_upload.pyocd_python`), then the interpreter behind any `pyocd` on

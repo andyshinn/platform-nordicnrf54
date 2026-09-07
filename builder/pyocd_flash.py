@@ -13,25 +13,44 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Flash Intel-hex images to an nRF54L part page-by-page over CMSIS-DAP.
+"""Flash Intel-hex images to an nRF54L part over CMSIS-DAP, via RRAMC.
 
 Why this exists instead of a plain `pyocd flash` call
 -----------------------------------------------------
-pyocd 0.45.1's ``nrf54lm20a`` flash algorithm hardfaults --
+pyocd 0.45.1's nRF54L flash algorithm cannot be trusted on this part:
 
-    target was not halted as expected after calling flash algorithm
-    routine (IPSR=3)
+  * It **silently corrupts 24 bytes at offset 0x238 of every page it
+    programs.** Programming 4096 bytes of 0xAA into each of 0x00000000,
+    0x00010000, 0x001D0000 and 0x001D1000 reads back as 0xAA everywhere
+    except a constant window at +0x238..+0x24F holding
+    ``01000000 00000000 00000000 00000000 00000000 01000020``. Same offset,
+    same bytes, every page, whatever the page address, and with
+    ``cache.enable_memory: False`` so it is not a read-cache artifact. The
+    CPU executes those bytes, which is what made the bootloader HardFault.
+    ``erase_sector()`` does not clear the window either.
 
--- whenever more than one page is programmed per flash-algorithm
-invocation. Single pages always succeed. ``-O enable_double_buffering=False``
-does not help, so the CLI (which batches) cannot be used. This drives
-pyocd's low-level flash API one 4096-byte page at a time, with every page
-going through a *single* debug session rather than one pyocd process per
-page.
+  * It also hardfaults - "target was not halted as expected after calling
+    flash algorithm routine (IPSR=3)" - as soon as more than one page is
+    programmed per flash-algorithm invocation. Same broken target support,
+    second symptom.
 
-``frequency`` matters too: at pyocd's default SWD clock the probe returns
-intermittent ``TransferError: SWD/JTAG communication failure (No ACK)``,
-especially in the moments right after a chip erase. 1 MHz is reliable.
+So the flash algorithm is bypassed completely. nRF54L non-volatile memory
+is RRAM, not flash: it needs no erase and is directly writable over the
+debug port once RRAMC's CONFIG.WEN is set. This writes the image straight
+into RRAM with ``write_memory_block8`` and commits the RRAMC write buffer
+at the end.
+
+Register offsets are from ``NRF_RRAMC_Type`` in the framework MDK headers
+(identical across the nRF54L family); the *base* is chip-specific -
+0x5004B000 on nRF54L05/10/15, 0x5004E000 on nRF54LM20A - so it is passed
+in from the board JSON's ``upload.rramc_base`` rather than hardcoded.
+
+Read-back verification is **mandatory and cannot be switched off**: a
+flasher that silently writes the wrong bytes is worse than one that fails
+loudly, which is exactly the trap the flash algorithm above set. The
+session also runs with pyocd's memory cache disabled, so verification
+reads reach the target instead of being answered from the cache that just
+absorbed the writes.
 
 Finding pyocd
 -------------
@@ -45,19 +64,28 @@ re-executes itself under one that can:
   4. ``uv run --with pyocd``, if uv is installed
 
 Usage:
-  pyocd_flash.py [--target NAME] [--frequency HZ] [--probe UID] [--erase]
-                 [--reset] [--verify] [--python EXE] [file.hex ...]
+  pyocd_flash.py --rramc-base ADDR [--target NAME] [--frequency HZ]
+                 [--probe UID] [--page-size N] [--erase] [--reset]
+                 [--python EXE] [file.hex ...]
 """
 
 import os
 import subprocess
 import sys
+import time
 
 PAGE = 0x1000
 DEFAULT_TARGET = "nrf54lm20a"
 DEFAULT_FREQUENCY = 1000000
-PROGRAM_RETRIES = 3
 REEXEC_GUARD = "PIO_PYOCD_FLASH_REEXEC"
+
+# NRF_RRAMC_Type register offsets (nrf54l*_types.h). Identical family-wide.
+RRAMC_TASKS_COMMITWRITEBUF = 0x008
+RRAMC_READY = 0x400            # bit 0: 1 = ready, 0 = busy
+RRAMC_CONFIG = 0x500           # bit 0: WEN, bits 8..13: WRITEBUFSIZE
+RRAMC_CONFIG_WEN = 1 << 0
+READY_TIMEOUT_S = 2.0
+MAX_DIFFS_REPORTED = 10
 
 
 # ---------------------------------------------------------------- bootstrap
@@ -118,7 +146,6 @@ def reexec_with_pyocd(argv, explicit_python):
         sys.stderr.write(
             "Error: %s cannot import pyocd.\n" % os.environ[REEXEC_GUARD])
         return None
-    env_marker = sys.executable
 
     for exe in _candidate_interpreters(explicit_python):
         if _has_pyocd(exe):
@@ -143,7 +170,7 @@ def reexec_with_pyocd(argv, explicit_python):
         "       and `uv run`).\n"
         "       Install it with `pip install pyocd`, or point PYOCD_PYTHON /\n"
         "       board_upload.pyocd_python at an interpreter that has it.\n"
-        % env_marker)
+        % sys.executable)
     return None
 
 
@@ -172,79 +199,73 @@ def parse_hex(path):
     return out
 
 
-def pages_from(mem):
-    """Group a sparse byte map into whole, 0xFF-padded pages.
+def add_pages(pages, mem, page_size):
+    """Merge a sparse byte map into whole, 0xFF-padded pages.
 
-    0xFF is the erased state of nRF54L RRAM, so padding a partial page
-    with it leaves the untouched bytes exactly as the erase left them.
+    Writing whole pages is what makes the missing erase step a non-issue:
+    every byte of a page the image touches is written, so stale content
+    cannot survive underneath. 0xFF is the value an erase would have left.
     """
-    pages = {}
     for addr, byte in mem.items():
-        page = addr & ~(PAGE - 1)
-        pages.setdefault(page, bytearray(b"\xff" * PAGE))[addr - page] = byte
+        page = addr & ~(page_size - 1)
+        pages.setdefault(
+            page, bytearray(b"\xff" * page_size))[addr - page] = byte
     return pages
 
 
 # ----------------------------------------------------------------- flashing
 
-def group_by_flash(target, addrs):
-    """Bucket page addresses by the flash driver that owns them."""
-    grouped = {}
-    for addr in sorted(addrs):
-        region = target.memory_map.get_region_for_address(addr)
-        flash = getattr(region, "flash", None) if region else None
-        if flash is None:
-            raise RuntimeError(
-                "no programmable flash region for address 0x%08X - the hex "
-                "writes outside anything this pyocd target maps" % addr)
-        grouped.setdefault(flash, []).append(addr)
-    return grouped
+def wait_ready(target, ready_reg):
+    deadline = time.time() + READY_TIMEOUT_S
+    while time.time() < deadline:
+        if target.read32(ready_reg) & 1:
+            return True
+        time.sleep(0.001)
+    return False
 
 
-def program_pages(flash, addrs, pages):
-    """Erase then program the given pages, one page per algo invocation."""
-    flash.init(flash.Operation.ERASE)
-    for addr in addrs:
-        flash.erase_sector(addr)
-    flash.uninit()
-
-    ok = failed = 0
-    flash.init(flash.Operation.PROGRAM)
-    for addr in addrs:
-        for attempt in range(PROGRAM_RETRIES):
-            try:
-                flash.program_page(addr, bytes(pages[addr]))
-                ok += 1
-                break
-            except Exception as exc:  # pylint: disable=broad-except
-                if attempt == PROGRAM_RETRIES - 1:
-                    sys.stderr.write("  FAILED 0x%08X: %s\n" % (addr, exc))
-                    failed += 1
-                else:
-                    # A failed algo call leaves the target halted in an
-                    # unknown state; re-init before retrying.
-                    flash.uninit()
-                    flash.init(flash.Operation.PROGRAM)
-    flash.uninit()
-    return ok, failed
+def write_pages(target, rramc_base, pages):
+    """Write every page straight into RRAM, then commit the write buffer."""
+    config = rramc_base + RRAMC_CONFIG
+    target.write32(config, RRAMC_CONFIG_WEN)
+    try:
+        for addr in sorted(pages):
+            target.write_memory_block8(addr, bytes(pages[addr]))
+        # WRITEBUFSIZE is left at 0 (unbuffered) by the CONFIG write above,
+        # so this is a belt-and-braces flush of anything still pending.
+        target.write32(rramc_base + RRAMC_TASKS_COMMITWRITEBUF, 1)
+        return wait_ready(target, rramc_base + RRAMC_READY)
+    finally:
+        target.write32(config, 0)
 
 
-def verify_pages(target, addrs, pages):
+def verify_pages(target, pages, page_size):
+    """Read every written page back and compare. Returns bad byte count."""
     bad = 0
-    for addr in addrs:
-        got = bytes(target.read_memory_block8(addr, PAGE))
-        if got != bytes(pages[addr]):
-            sys.stderr.write("  VERIFY FAILED 0x%08X\n" % addr)
-            bad += 1
+    for addr in sorted(pages):
+        expected = bytes(pages[addr])
+        got = bytes(target.read_memory_block8(addr, page_size))
+        if got == expected:
+            continue
+        for i in range(page_size):
+            if got[i] != expected[i]:
+                if bad < MAX_DIFFS_REPORTED:
+                    sys.stderr.write(
+                        "  MISMATCH 0x%08X: read %02X, expected %02X\n"
+                        % (addr + i, got[i], expected[i]))
+                bad += 1
     return bad
 
 
-def chip_erase(target):
-    region = target.memory_map.get_boot_memory()
-    flash = region.flash
-    flash.init(flash.Operation.ERASE)
-    flash.erase_all()
-    flash.uninit()
+def mass_erase(target):
+    """Erase the whole part.
+
+    RRAM needs no erase before a write, so this is only useful to wipe a
+    part or to recover one that has re-locked its debug access. It goes
+    through the debug port's erase-all, not the flash algorithm - pyocd's
+    `erase_all` leaves the corrupt +0x238 window behind.
+    """
+    return target.mass_erase()
 
 
 # --------------------------------------------------------------------- main
@@ -253,13 +274,16 @@ def parse_args(argv):
     opts = {
         "target": DEFAULT_TARGET,
         "frequency": DEFAULT_FREQUENCY,
+        "rramc-base": None,
+        "page-size": PAGE,
         "erase": False,
         "reset": False,
-        "verify": False,
         "probe": None,
         "python": None,
         "files": [],
     }
+    valued = ("--target", "--frequency", "--rramc-base", "--page-size",
+              "--probe", "--python")
     i = 0
     while i < len(argv):
         arg = argv[i]
@@ -270,15 +294,15 @@ def parse_args(argv):
             opts["erase"] = True
         elif arg == "--reset":
             opts["reset"] = True
-        elif arg == "--verify":
-            opts["verify"] = True
-        elif arg in ("--target", "--frequency", "--probe", "--python"):
+        elif arg in valued:
             i += 1
             if i >= len(argv):
                 raise SystemExit("Error: %s needs a value" % arg)
-            value = argv[i]
             key = arg[2:]
-            opts[key] = int(value, 0) if key == "frequency" else value
+            value = argv[i]
+            opts[key] = (int(value, 0)
+                         if key in ("frequency", "rramc-base", "page-size")
+                         else value)
         elif arg.startswith("-"):
             raise SystemExit("Error: unknown option %s" % arg)
         else:
@@ -294,20 +318,38 @@ def main(argv):
         from pyocd.core.helpers import ConnectHelper
     except ImportError:
         reexec_with_pyocd(argv, opts["python"])
-        return 1  # only reached when re-exec found nothing
+        return 1  # only reached when the re-exec search found nothing
 
     if not opts["files"] and not opts["erase"]:
         sys.stderr.write("Error: nothing to do - pass a hex file or --erase\n")
         return 1
+    if opts["files"] and opts["rramc-base"] is None:
+        sys.stderr.write(
+            "Error: --rramc-base is required to write RRAM (0x5004B000 on "
+            "nRF54L05/10/15, 0x5004E000 on nRF54LM20A).\n")
+        return 1
 
-    # blocking=False: a missing probe must fail the build immediately
-    # rather than sit at pyocd's "waiting for a debug probe" prompt.
+    page_size = opts["page-size"]
+    pages = {}
+    for path in opts["files"]:
+        before = len(pages)
+        add_pages(pages, parse_hex(path), page_size)
+        print("%s: %d pages" % (path, len(pages) - before))
+    if opts["files"] and not pages:
+        sys.stderr.write("Error: the given hex files contain no data\n")
+        return 1
+
+    # blocking=False: a missing probe must fail the build immediately rather
+    # than sit at pyocd's "waiting for a debug probe" prompt.
+    # cache.enable_memory=False: verification has to read the target, not the
+    # cache that just absorbed the writes.
     session = ConnectHelper.session_with_chosen_probe(
         blocking=False,
         unique_id=opts["probe"],
         target_override=opts["target"],
         options={
             "warning.cortex_m_default": False,
+            "cache.enable_memory": False,
             "frequency": opts["frequency"],
         })
     if session is None:
@@ -321,32 +363,33 @@ def main(argv):
         target.reset_and_halt()
 
         if opts["erase"]:
-            print("Chip erase...")
-            chip_erase(target)
+            print("Erasing the whole part...")
+            mass_erase(target)
+            target.reset_and_halt()
 
-        total_ok = total_failed = total_bad = 0
-        for path in opts["files"]:
-            pages = pages_from(parse_hex(path))
-            if not pages:
-                sys.stderr.write("Warning: %s contains no data\n" % path)
-                continue
-            print("%s: %d pages" % (path, len(pages)))
-            for flash, addrs in group_by_flash(target, pages).items():
-                ok, failed = program_pages(flash, addrs, pages)
-                total_ok += ok
-                total_failed += failed
-                if opts["verify"] and not failed:
-                    total_bad += verify_pages(target, addrs, pages)
+        if not pages:
+            return 0
 
-        print("Programmed %d pages, %d failed%s"
-              % (total_ok, total_failed,
-                 ", %d mismatched" % total_bad if opts["verify"] else ""))
+        print("Writing %d pages to RRAM..." % len(pages))
+        if not write_pages(target, opts["rramc-base"], pages):
+            sys.stderr.write(
+                "Error: RRAMC did not report ready after the commit\n")
+            return 1
 
-        if opts["reset"] and not (total_failed or total_bad):
+        print("Verifying %d pages..." % len(pages))
+        bad = verify_pages(target, pages, page_size)
+        if bad:
+            sys.stderr.write(
+                "Error: %d byte(s) read back wrong - the part was NOT "
+                "programmed correctly\n" % bad)
+            return 1
+        print("OK: %d pages written and verified" % len(pages))
+
+        if opts["reset"]:
             print("Resetting target")
             target.reset()
 
-    return 1 if (total_failed or total_bad) else 0
+    return 0
 
 
 if __name__ == "__main__":
