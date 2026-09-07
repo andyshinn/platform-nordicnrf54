@@ -35,11 +35,11 @@ class Nordicnrf54Platform(PlatformBase):
 
         # The bootloader / erase / softdevice targets need a debug probe.
         # nrfjprog only talks to a J-Link, so boards driven through a
-        # CMSIS-DAP probe run those targets on probe-rs (see builder/main.py)
-        # and must not pull tool-nrfjprog in.
-        uses_probe_rs = upload_protocol in ("cmsis-dap", "probe-rs")
+        # CMSIS-DAP probe run those targets on pyocd or probe-rs (see
+        # builder/main.py) and must not pull tool-nrfjprog in.
+        uses_swd_probe = upload_protocol in ("cmsis-dap", "probe-rs", "pyocd")
 
-        if (not uses_probe_rs
+        if (not uses_swd_probe
                 and set(["bootloader", "erase", "softdevice"]) & set(targets)):
             self.packages["tool-nrfjprog"]["optional"] = False
         elif (upload_protocol and upload_protocol != "nrfjprog"
