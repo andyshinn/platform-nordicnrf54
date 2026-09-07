@@ -47,7 +47,7 @@ The platform <-> framework boundary follows one rule everywhere:
 | Compiler invocation: `-mcpu`, `-mfpu`, include paths (`CPPPATH`), `CPPDEFINES`, force-includes, what `BuildLibrary` walks | **here** — `builder/frameworks/arduino/adafruit.py` |
 | Board metadata: chip, MCU define, link script name, flash/RAM sizes, SD FWID, bootloader settings address, upload tooling | **here** — `boards/<variant>.json` |
 | Toolchain / tool package versions | **here** — `platform.json` |
-| Upload / merge / DFU-package logic, upload targets | **here** — `builder/main.py` |
+| Upload / merge / DFU-package logic, upload targets | **here** — `builder/main.py`, `builder/pyocd_flash.py` |
 | Example sketches, CI matrix | **here** — `examples/`, `.github/workflows/` |
 | C/C++ source, headers, linker scripts, `nrfx_config.h`, variants, bundled-library `library.properties` | framework repo |
 | Bootloader source, linker scripts, board defs, per-board hex | bootloader repo |
@@ -138,6 +138,8 @@ builder/
     _bare.py         - bare-metal (no-framework) build
   main.py           - post-build: ELF->hex, MergeHex, DFU packaging,
                       upload / softdevice / bootloader targets
+  pyocd_flash.py    - page-at-a-time CMSIS-DAP flasher used by those
+                      targets when upload_protocol is cmsis-dap/pyocd
 boards/             - five board JSONs (nrf54l{15,10,05}dk, xiao_nrf54l15(_sense))
 examples/           - arduino-blink, arduino-ble-led, arduino-ble-uart
                       (also the CI matrix)

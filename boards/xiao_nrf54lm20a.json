@@ -43,17 +43,20 @@
     "maximum_ram_size": 505856,
     "maximum_size": 1859584,
     "speed": 115200,
-    "protocol": "nrfutil",
+    "protocol": "cmsis-dap",
     "protocols": [
       "cmsis-dap",
+      "pyocd",
+      "probe-rs",
       "jlink",
       "nrfjprog",
       "nrfutil"
     ],
     "probe_rs_chip": "nRF54LM20A",
     "use_1200bps_touch": false,
-    "require_upload_port": true,
-    "wait_for_upload_port": true
+    "require_upload_port": false,
+    "wait_for_upload_port": false,
+    "pyocd_target": "nrf54lm20a"
   },
   "url": "https://www.seeedstudio.com/",
   "vendor": "Seeed"

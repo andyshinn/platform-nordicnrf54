@@ -40,57 +40,76 @@ and the DFU bootloader from
 
 ## Uploading
 
-The default `upload_protocol` for every board here is `nrfutil` — serial
-DFU into the Adafruit-style bootloader from
+The DK boards and the XIAO nRF54L15 default to `upload_protocol = nrfutil`
+— serial DFU into the Adafruit-style bootloader from
 [caveman99/nRF54_Bootloader](https://github.com/caveman99/nRF54_Bootloader).
 That assumes the bootloader is already on the chip.
 
-A **stock Seeed XIAO nRF54LM20A is not in that state**. Out of the box it
-enumerates as `Seeed Studio XIAO nRF54LM20A CMSIS-DAP` (VID `0x2886`, PID
-`0x0068`) — an onboard debug probe, not a DFU serial port — so
-`pio run -t upload` has no port to talk to until the bootloader is
-installed once.
+A **stock Seeed XIAO nRF54LM20A is not in that state**, and has no way to
+get there over USB: out of the box it enumerates only as
+`Seeed Studio XIAO nRF54LM20A CMSIS-DAP` (VID `0x2886`, PID `0x0068`) — an
+onboard SAMD11 debug probe, not a DFU serial port. It therefore defaults to
+`upload_protocol = cmsis-dap`, and everything goes over SWD through that
+probe:
 
-To install it, flash the bootloader over SWD using either:
+```
+pio run -t bootloader     # SoftDevice + bootloader + settings, one chip erase
+pio run -t upload         # the application (SoftDevice-merged firmware.hex)
+```
 
-- **An external J-Link / Nordic probe** on the SWD pads:
-  `upload_protocol = jlink` or `nrfjprog`. This is the path the nRF54L DKs
-  use — they carry an on-board J-Link — and it is unchanged.
-- **probe-rs over the onboard CMSIS-DAP probe.** Set
+Run `-t bootloader` once on a fresh board, then `-t upload` for day-to-day
+work. The two are deliberately disjoint in RRAM — `-t bootloader` owns
+`0x0`, `0x1D0000–0x1D7C48` and the settings page at `0x1D9000`, while
+`firmware.hex` covers only `0x1000–<app end>` and the SoftDevice at
+`0x1DA800+` — so an upload never disturbs the bootloader.
 
-  ```ini
-  upload_protocol = cmsis-dap
-  ```
+`-t bootloader` is a **single** operation. The part re-locks debug access on
+every power cycle while no valid firmware is running, and regaining access
+costs an erase-all — so flashing the bootloader and then the SoftDevice
+incrementally loses the first write. The target merges the SoftDevice, the
+bootloader and the bootloader settings word (first word `0x00000001`, which
+disables the CRC check) into one `bootstrap.hex` with `srec_cat` and flashes
+it after a single chip erase. Use `-t softdevice` on its own only on a part
+that is already unlocked and running.
 
-  and the `bootloader`, `softdevice`, `erase` and `upload` targets all run
-  through probe-rs instead of nrfjprog:
+### Which tool drives the probe
 
-  ```
-  pio run -t bootloader     # SoftDevice + bootloader, in one chip erase
-  ```
+| `upload_protocol` | Tool | Notes |
+|---|---|---|
+| `cmsis-dap` (default on `xiao_nrf54lm20a`), `pyocd` | pyocd | Needs `upload.pyocd_target` in the board JSON |
+| `probe-rs` | probe-rs | Needs `upload.probe_rs_chip`; probe-rs ≥ 0.32 on `PATH` |
+| `jlink`, `nrfjprog` | J-Link / nrfjprog | External probe on the SWD pads; the DK path, unchanged |
+| `nrfutil` | adafruit-nrfutil | Serial DFU, once the bootloader is installed |
 
-probe-rs must be on `PATH` — install it from <https://probe.rs>. Use
-**probe-rs ≥ 0.32**, which lists `nRF54LM20A` in `probe-rs chip list`. It
-is not declared as a platform package, the same way `nrfjprog` is not.
+Neither pyocd nor probe-rs is declared as a platform package, the same way
+`nrfjprog` is not.
 
-`-t bootloader` is deliberately a **single** operation on this path. The
-part re-locks debug access on every power cycle while no valid firmware is
-running, and regaining access costs an erase-all — so flashing the
-bootloader and then the SoftDevice incrementally loses the first write.
-The target therefore merges the SoftDevice, the bootloader and the
-bootloader settings word into one `bootstrap.hex` with `srec_cat` and
-flashes it with a single `--chip-erase`. Use `-t softdevice` on its own
-only on a part that is already unlocked and running.
+#### pyocd is driven page-at-a-time, not through its CLI
 
-pyocd is not used. Its built-in `nrf54lm20a` target maps no region for the
-UICR words the bootloader hex writes at `0x10001014`, so `pyocd flash`
-faults partway through the bootloader image.
+pyocd 0.45.1's `nrf54lm20a` flash algorithm hardfaults — `target was not
+halted as expected after calling flash algorithm routine (IPSR=3)` — as
+soon as more than one page is programmed per flash-algorithm invocation.
+Single pages always succeed, and `-O enable_double_buffering=False` does not
+help, so `pyocd flash` / `pyocd load` cannot be used on this part.
 
-Once the bootloader is installed, `nrfutil` DFU works normally and is the
-intended day-to-day path. `use_1200bps_touch` is `false` for
-`xiao_nrf54lm20a`: the SAMD11 owns USB, so touching its CDC port at 1200
-baud cannot reset the nRF54LM20A into DFU. Enter DFU with a double-tap of
-reset instead.
+[`builder/pyocd_flash.py`](builder/pyocd_flash.py) works around it: it parses
+the hex itself, groups it into 4096-byte pages, and programs them one page
+per `program_page()` call (with retries) inside a *single* debug session. It
+also pins the SWD clock to 1 MHz — at pyocd's default clock the SAMD11
+returns intermittent `SWD/JTAG communication failure (No ACK)`, especially in
+the moments right after a chip erase. Override it with
+`board_upload.pyocd_frequency` if needed.
+
+The script finds pyocd on its own: `$PYOCD_PYTHON` (or
+`board_upload.pyocd_python`), then the interpreter behind any `pyocd` on
+`PATH`, then `python3`, and finally `uv run --with pyocd` if
+[uv](https://docs.astral.sh/uv/) is installed. `pip install pyocd` anywhere
+visible to one of those is enough.
+
+Once the bootloader is installed, `upload_protocol = nrfutil` DFU also works.
+`use_1200bps_touch` is `false` for `xiao_nrf54lm20a`: the SAMD11 owns USB, so
+touching its CDC port at 1200 baud cannot reset the nRF54LM20A into DFU. Enter
+DFU with a double-tap of reset instead.
 
 ### Debugging
 

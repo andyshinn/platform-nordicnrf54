@@ -54,30 +54,53 @@ SRECCAT = join(platform.get_package_dir("tool-sreccat") or "", "srec_cat")
 # nrfjprog drives a J-Link and nothing else. That is right for the DKs, which
 # carry an on-board J-Link, so the nrfjprog path below is left untouched. It
 # is useless on the XIAO nRF54LM20A, whose only probe is an on-board SAMD11
-# CMSIS-DAP bridge (USB 2886:0068). Those boards select "cmsis-dap" (or
-# "probe-rs") and run the same operations through probe-rs, which speaks
-# CMSIS-DAP and knows this part natively.
+# CMSIS-DAP bridge (USB 2886:0068). Those boards run the same operations
+# through a tool that speaks CMSIS-DAP:
 #
-# probe-rs is expected on PATH, exactly as this file already invokes
-# nrfjprog. Use probe-rs >= 0.32, which lists nRF54L15 and nRF54LM20A in
-# `probe-rs chip list`.
+#   * pyocd - selected by "cmsis-dap" (the default for such boards) and by
+#     "pyocd". Driven through builder/pyocd_flash.py rather than the `pyocd`
+#     CLI: pyocd 0.45.1's nrf54lm20a flash algorithm hardfaults whenever more
+#     than one page is programmed per flash-algorithm invocation, so the
+#     helper walks the image a page at a time inside one debug session. It
+#     finds pyocd itself (see that file's header).
 #
-# pyocd is deliberately not used here. Its built-in nRF54LM20A target maps no
-# region for the UICR words the bootloader hex writes at 0x10001014, so
-# `pyocd flash` faults partway through the bootloader image.
-use_probe_rs = upload_protocol in ("cmsis-dap", "probe-rs")
+#   * probe-rs - selected by "probe-rs". Expected on PATH, exactly as this
+#     file already invokes nrfjprog. Use probe-rs >= 0.32, which lists
+#     nRF54L15 and nRF54LM20A in `probe-rs chip list`.
+use_pyocd = upload_protocol in ("cmsis-dap", "pyocd")
+use_probe_rs = upload_protocol == "probe-rs"
+use_swd_probe = use_pyocd or use_probe_rs
 
-# probe-rs names parts as Nordic does ("nRF54LM20A"), which is neither
-# build.mcu ("nrf54lm20") nor the variant, so boards wired to a CMSIS-DAP
-# probe declare it explicitly via upload.probe_rs_chip.
+# Both tools name parts their own way - probe-rs as Nordic does
+# ("nRF54LM20A"), pyocd in lower case ("nrf54lm20a") - and neither matches
+# build.mcu ("nrf54lm20") or the variant, so boards wired to a CMSIS-DAP
+# probe declare the names explicitly.
 probe_rs_chip = board.get("upload.probe_rs_chip", "")
+pyocd_target = board.get("upload.pyocd_target", "")
+# At pyocd's default SWD clock the onboard SAMD11 returns intermittent
+# "No ACK" transfer errors, especially right after a chip erase. 1 MHz is
+# reliable; overridable per board via upload.pyocd_frequency.
+pyocd_frequency = str(board.get("upload.pyocd_frequency", 1000000))
+# Optional escape hatch: an interpreter that has pyocd installed, for setups
+# where the helper's own search would not find one.
+pyocd_python = board.get("upload.pyocd_python", "")
+
+PYOCD_FLASH = join(platform.get_dir(), "builder", "pyocd_flash.py")
 
 PROBE_TARGETS = set(["upload", "bootloader", "softdevice", "erase"])
-if (use_probe_rs and not probe_rs_chip
-        and PROBE_TARGETS & set(COMMAND_LINE_TARGETS)):
+probe_target_requested = bool(PROBE_TARGETS & set(COMMAND_LINE_TARGETS))
+
+if use_probe_rs and not probe_rs_chip and probe_target_requested:
     sys.stderr.write(
         "Error. Board '%s' selects upload_protocol '%s' but declares no "
         "upload.probe_rs_chip, so probe-rs has no chip to target.\n"
+        % (env.subst("$BOARD"), upload_protocol))
+    env.Exit(1)
+
+if use_pyocd and not pyocd_target and probe_target_requested:
+    sys.stderr.write(
+        "Error. Board '%s' selects upload_protocol '%s' but declares no "
+        "upload.pyocd_target, so pyocd has no chip to target.\n"
         % (env.subst("$BOARD"), upload_protocol))
     env.Exit(1)
 
@@ -86,6 +109,16 @@ def ProbeRsCmd(subcommand, *args):
     """A probe-rs invocation carrying the board's chip selection."""
     return " ".join(
         ["probe-rs", subcommand, "--chip", probe_rs_chip] + list(args))
+
+
+def PyocdCmd(*args):
+    """A builder/pyocd_flash.py invocation for this board."""
+    cmd = ['"$PYTHONEXE"', '"%s"' % PYOCD_FLASH,
+           "--target", pyocd_target,
+           "--frequency", pyocd_frequency]
+    if pyocd_python:
+        cmd += ["--python", '"%s"' % pyocd_python]
+    return " ".join(cmd + list(args))
 
 
 env.Replace(
@@ -105,9 +138,9 @@ env.Replace(
     SIZECHECKCMD="$SIZETOOL -A -d $SOURCES",
     SIZEPRINTCMD='$SIZETOOL -B -d $SOURCES',
 
-    ERASEFLAGS=(["erase", "--chip", probe_rs_chip] if use_probe_rs
-                else ["--eraseall", "-f", "nrf54l"]),
-    ERASECMD=("probe-rs $ERASEFLAGS" if use_probe_rs
+    ERASEFLAGS=([] if use_swd_probe else ["--eraseall", "-f", "nrf54l"]),
+    ERASECMD=(PyocdCmd("--erase", "--reset") if use_pyocd
+              else ProbeRsCmd("erase") if use_probe_rs
               else "nrfjprog $ERASEFLAGS"),
 
     PROGSUFFIX=".elf"
@@ -271,7 +304,7 @@ if "DFUBOOTHEX" in env:
         "Generate DFU Image",
     )
 
-    if use_probe_rs:
+    if use_swd_probe:
         # The part re-locks debug access on every power cycle while no valid
         # firmware is running, and regaining access costs an erase-all. So
         # this is one shot: merge the SoftDevice, the bootloader and the
@@ -289,20 +322,34 @@ if "DFUBOOTHEX" in env:
             "$DFUBOOTHEX", "-intel",
             # Bootloader settings: first word set to 1 disables the CRC check
             # so the bootloader accepts the application handed to it later.
+            # The rest of the settings page is left at the erased value by
+            # the chip erase that precedes this image.
             "-generate", hex(settings_addr), hex(settings_addr + 4),
             "-constant-l-e", "0x00000001", "4",
             "-o", bootstrap_hex, "-intel", "--line-length=44",
         ]
 
+        if use_pyocd:
+            flash_bootstrap = [
+                env.VerboseAction(
+                    PyocdCmd("--erase", "--reset", '"%s"' % bootstrap_hex),
+                    "Flashing SoftDevice + bootloader",
+                ),
+            ]
+        else:
+            flash_bootstrap = [
+                env.VerboseAction(
+                    ProbeRsCmd("download", "--binary-format", "hex",
+                               "--allow-erase-all", "--chip-erase",
+                               bootstrap_hex),
+                    "Flashing SoftDevice + bootloader",
+                ),
+                env.VerboseAction(ProbeRsCmd("reset"), "Reset nRF54L"),
+            ]
+
         bootloader_actions = [
             env.VerboseAction(" ".join(merge_cmd), "Building %s" % bootstrap_hex),
-            env.VerboseAction(
-                ProbeRsCmd("download", "--binary-format", "hex",
-                           "--allow-erase-all", "--chip-erase", bootstrap_hex),
-                "Flashing SoftDevice + bootloader",
-            ),
-            env.VerboseAction(ProbeRsCmd("reset"), "Reset nRF54L"),
-        ]
+        ] + flash_bootstrap
     else:
         bootloader_actions = [
             env.VerboseAction(
@@ -328,11 +375,18 @@ if "bootloader" in COMMAND_LINE_TARGETS and "DFUBOOTHEX" not in env:
     env.Exit(1)
 
 if "SOFTDEVICEHEX" in env:
-    if use_probe_rs:
+    if use_pyocd:
         # Programs the SoftDevice on its own, leaving the rest of RRAM alone.
         # On a stock (debug-locked) part this cannot work -- regaining access
         # needs an erase-all -- so use the `bootloader` target there, which
         # flashes the SoftDevice and the bootloader together in one pass.
+        softdevice_actions = [
+            env.VerboseAction(
+                PyocdCmd("--reset", '"$SOFTDEVICEHEX"'),
+                "Flashing SoftDevice $SOFTDEVICEHEX",
+            ),
+        ]
+    elif use_probe_rs:
         softdevice_actions = [
             env.VerboseAction(
                 ProbeRsCmd("download", "--binary-format", "hex",
@@ -463,23 +517,33 @@ elif upload_protocol.startswith("jlink"):
     )
     upload_actions = [env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE")]
 
-elif use_probe_rs:
+elif use_swd_probe:
     # Ordered ahead of the debug_tools branch below: platform.py registers a
     # "cmsis-dap" OpenOCD debug tool for any board listing that protocol, and
     # tool-openocd ships no nRF54L flash driver, so it cannot program the part.
-    env.Replace(
-        UPLOADER="probe-rs",
-        UPLOADERFLAGS=[
-            "download",
-            "--chip", probe_rs_chip,
-            "--binary-format", "hex",
-        ],
-        UPLOADCMD="$UPLOADER $UPLOADERFLAGS $SOURCE",
-    )
-    upload_actions = [
-        env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE"),
-        env.VerboseAction(ProbeRsCmd("reset"), "Reset nRF54L"),
-    ]
+    if use_pyocd:
+        # $SOURCE is the SoftDevice-merged firmware.hex. It leaves the
+        # bootloader (0x0 and 0x1D0000+) and the settings page untouched -
+        # nothing in the image lands in those pages - so an upload onto a
+        # part prepared with `-t bootloader` keeps it bootable.
+        env.Replace(UPLOADCMD=PyocdCmd("--reset", '"$SOURCE"'))
+        upload_actions = [
+            env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE"),
+        ]
+    else:
+        env.Replace(
+            UPLOADER="probe-rs",
+            UPLOADERFLAGS=[
+                "download",
+                "--chip", probe_rs_chip,
+                "--binary-format", "hex",
+            ],
+            UPLOADCMD="$UPLOADER $UPLOADERFLAGS $SOURCE",
+        )
+        upload_actions = [
+            env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE"),
+            env.VerboseAction(ProbeRsCmd("reset"), "Reset nRF54L"),
+        ]
 
 elif upload_protocol in debug_tools:
     openocd_args = [
