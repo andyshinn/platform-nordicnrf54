@@ -138,8 +138,10 @@ builder/
     _bare.py         - bare-metal (no-framework) build
   main.py           - post-build: ELF->hex, MergeHex, DFU packaging,
                       upload / softdevice / bootloader targets
-  pyocd_flash.py    - page-at-a-time CMSIS-DAP flasher used by those
-                      targets when upload_protocol is cmsis-dap/pyocd
+  pyocd_flash.py    - CMSIS-DAP flasher used by those targets when
+                      upload_protocol is cmsis-dap/pyocd. Writes RRAM
+                      directly through RRAMC (pyocd's own nRF54L flash
+                      algorithm corrupts every page) and always verifies
 boards/             - five board JSONs (nrf54l{15,10,05}dk, xiao_nrf54l15(_sense))
 examples/           - arduino-blink, arduino-ble-led, arduino-ble-uart
                       (also the CI matrix)

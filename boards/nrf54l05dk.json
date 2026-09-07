@@ -52,7 +52,9 @@
     ],
     "use_1200bps_touch": true,
     "require_upload_port": true,
-    "wait_for_upload_port": true
+    "wait_for_upload_port": true,
+    "rramc_base": "0x5004B000",
+    "pyocd_target": "nrf54l"
   },
   "url": "https://www.nordicsemi.com/Products/nRF54L05",
   "vendor": "Nordic"

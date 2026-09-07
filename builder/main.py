@@ -59,10 +59,10 @@ SRECCAT = join(platform.get_package_dir("tool-sreccat") or "", "srec_cat")
 #
 #   * pyocd - selected by "cmsis-dap" (the default for such boards) and by
 #     "pyocd". Driven through builder/pyocd_flash.py rather than the `pyocd`
-#     CLI: pyocd 0.45.1's nrf54lm20a flash algorithm hardfaults whenever more
-#     than one page is programmed per flash-algorithm invocation, so the
-#     helper walks the image a page at a time inside one debug session. It
-#     finds pyocd itself (see that file's header).
+#     CLI: pyocd 0.45.1's nRF54L flash algorithm silently corrupts 24 bytes
+#     of every page it programs (and hardfaults on multi-page writes), so the
+#     helper bypasses it and writes RRAM directly through RRAMC, verifying
+#     every byte it wrote. It finds pyocd itself (see that file's header).
 #
 #   * probe-rs - selected by "probe-rs". Expected on PATH, exactly as this
 #     file already invokes nrfjprog. Use probe-rs >= 0.32, which lists
@@ -77,6 +77,10 @@ use_swd_probe = use_pyocd or use_probe_rs
 # probe declare the names explicitly.
 probe_rs_chip = board.get("upload.probe_rs_chip", "")
 pyocd_target = board.get("upload.pyocd_target", "")
+# RRAMC base address, from NRF_RRAMC_S_BASE in the MDK headers: 0x5004B000
+# on nRF54L05/10/15, 0x5004E000 on nRF54LM20A. The helper writes RRAM
+# through this peripheral instead of pyocd's broken flash algorithm.
+rramc_base = board.get("upload.rramc_base", "")
 # At pyocd's default SWD clock the onboard SAMD11 returns intermittent
 # "No ACK" transfer errors, especially right after a chip erase. 1 MHz is
 # reliable; overridable per board via upload.pyocd_frequency.
@@ -97,12 +101,15 @@ if use_probe_rs and not probe_rs_chip and probe_target_requested:
         % (env.subst("$BOARD"), upload_protocol))
     env.Exit(1)
 
-if use_pyocd and not pyocd_target and probe_target_requested:
-    sys.stderr.write(
-        "Error. Board '%s' selects upload_protocol '%s' but declares no "
-        "upload.pyocd_target, so pyocd has no chip to target.\n"
-        % (env.subst("$BOARD"), upload_protocol))
-    env.Exit(1)
+if use_pyocd and probe_target_requested:
+    for key, value in (("upload.pyocd_target", pyocd_target),
+                       ("upload.rramc_base", rramc_base)):
+        if not value:
+            sys.stderr.write(
+                "Error. Board '%s' selects upload_protocol '%s' but declares "
+                "no %s, which the pyocd flasher needs.\n"
+                % (env.subst("$BOARD"), upload_protocol, key))
+            env.Exit(1)
 
 
 def ProbeRsCmd(subcommand, *args):
@@ -115,6 +122,7 @@ def PyocdCmd(*args):
     """A builder/pyocd_flash.py invocation for this board."""
     cmd = ['"$PYTHONEXE"', '"%s"' % PYOCD_FLASH,
            "--target", pyocd_target,
+           "--rramc-base", str(rramc_base),
            "--frequency", pyocd_frequency]
     if pyocd_python:
         cmd += ["--python", '"%s"' % pyocd_python]
@@ -139,7 +147,7 @@ env.Replace(
     SIZEPRINTCMD='$SIZETOOL -B -d $SOURCES',
 
     ERASEFLAGS=([] if use_swd_probe else ["--eraseall", "-f", "nrf54l"]),
-    ERASECMD=(PyocdCmd("--erase", "--reset") if use_pyocd
+    ERASECMD=(PyocdCmd("--erase") if use_pyocd
               else ProbeRsCmd("erase") if use_probe_rs
               else "nrfjprog $ERASEFLAGS"),
 
@@ -308,8 +316,8 @@ if "DFUBOOTHEX" in env:
         # The part re-locks debug access on every power cycle while no valid
         # firmware is running, and regaining access costs an erase-all. So
         # this is one shot: merge the SoftDevice, the bootloader and the
-        # bootloader settings word into a single image and flash it with a
-        # single chip erase, rather than the incremental
+        # bootloader settings word into a single image and flash it in a
+        # single debug session, rather than the incremental
         # bootloader-then-softdevice dance the nrfjprog path uses.
         settings_addr = int(
             board.get("build.bootloader.settings_addr", "0x7F000"), 16)
@@ -322,17 +330,22 @@ if "DFUBOOTHEX" in env:
             "$DFUBOOTHEX", "-intel",
             # Bootloader settings: first word set to 1 disables the CRC check
             # so the bootloader accepts the application handed to it later.
-            # The rest of the settings page is left at the erased value by
-            # the chip erase that precedes this image.
+            # The rest of that page ends up 0xFF either way - the pyocd
+            # helper writes whole 0xFF-padded pages, the probe-rs path
+            # chip-erases first.
             "-generate", hex(settings_addr), hex(settings_addr + 4),
             "-constant-l-e", "0x00000001", "4",
             "-o", bootstrap_hex, "-intel", "--line-length=44",
         ]
 
         if use_pyocd:
+            # No erase: RRAM is directly writable, and the helper writes
+            # whole pages, so nothing stale survives under the image. An
+            # erase-all here would only cost time (and pyocd's own erase
+            # goes through the flash algorithm this path exists to avoid).
             flash_bootstrap = [
                 env.VerboseAction(
-                    PyocdCmd("--erase", "--reset", '"%s"' % bootstrap_hex),
+                    PyocdCmd("--reset", '"%s"' % bootstrap_hex),
                     "Flashing SoftDevice + bootloader",
                 ),
             ]
