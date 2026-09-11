@@ -212,8 +212,12 @@ if "nrfutil" == upload_protocol or (
                         "tool-adafruit-nrfutil") or "", "adafruit-nrfutil.py"),
                     "dfu",
                     "genpkg",
+                    # 0x0054, not the nRF52 bootloader's 0x0052: dfu_init.c
+                    # compares the init packet's device_type against
+                    # DFU_DEVICE_TYPE and returns NRF_ERROR_FORBIDDEN on a
+                    # mismatch, so a 0x0052 package is refused on every nRF54L.
                     "--dev-type",
-                    "0x0052",
+                    board.get("build.dfu.dev_type", "0x0054"),
                     "--sd-req",
                     board.get("build.softdevice.sd_fwid"),
                     "--application",
