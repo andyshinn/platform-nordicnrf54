@@ -104,6 +104,7 @@ env.Append(
                      "srec_cat"),
                 "$SOFTDEVICEHEX",
                 "-intel",
+                "$MERGEBOOTHEX",
                 "$SOURCES",
                 "-intel",
                 "-o",
@@ -177,6 +178,9 @@ if "nobuild" in COMMAND_LINE_TARGETS:
     target_firm = join("$BUILD_DIR", "${PROGNAME}.hex")
 else:
     target_elf = env.BuildProgram()
+
+    # The bootloader owns RRAM 0x0 on nRF54L (no MBR), so a merged image without it does not boot.
+    env.Replace(MERGEBOOTHEX='"%s" -intel' % env["DFUBOOTHEX"] if "DFUBOOTHEX" in env else "")
 
     if "SOFTDEVICEHEX" in env:
         target_firm = env.MergeHex(
@@ -338,6 +342,18 @@ elif upload_protocol == "nrfutil":
         env.VerboseAction(BeforeUpload, "Looking for upload port..."),
         env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE")
     ]
+
+elif upload_protocol == "pyocd":
+    env.Replace(
+        UPLOADER="pyocd",
+        UPLOADERFLAGS=[
+            "load",
+            "--target", board.get("debug.pyocd_target", "nrf54l"),
+            "--erase", "sector",
+        ],
+        UPLOADCMD="$UPLOADER $UPLOADERFLAGS $SOURCE"
+    )
+    upload_actions = [env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE")]
 
 elif upload_protocol.startswith("jlink"):
 

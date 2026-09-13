@@ -27,11 +27,11 @@
   ],
   "debug": {
     "default_tools": [
-      "jlink"
+      "cmsis-dap"
     ],
     "jlink_device": "nRF54L15_xxAA",
     "onboard_tools": [
-      "jlink"
+      "cmsis-dap"
     ]
   },
   "frameworks": [
@@ -42,11 +42,12 @@
     "maximum_ram_size": 172928,
     "maximum_size": 1371136,
     "speed": 115200,
-    "protocol": "nrfutil",
+    "protocol": "pyocd",
     "protocols": [
       "jlink",
       "nrfjprog",
-      "nrfutil"
+      "nrfutil",
+      "pyocd"
     ],
     "use_1200bps_touch": true,
     "require_upload_port": true,

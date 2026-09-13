@@ -158,8 +158,11 @@ if board_define:
     env.Append(CPPDEFINES=[board_define])
 
 if ldscript:
-    env.Replace(LDSCRIPT_PATH=os.path.join(
-        FRAMEWORK_DIR, "variants", variant, ldscript))
+    # Variants may override the chip script; the framework's linker dir holds the defaults.
+    ld_path = os.path.join(FRAMEWORK_DIR, "variants", variant, ldscript)
+    if not os.path.isfile(ld_path):
+        ld_path = os.path.join(FRAMEWORK_DIR, "cores", "nRF5", "linker", ldscript)
+    env.Replace(LDSCRIPT_PATH=ld_path)
 
 sd_hex_path = os.path.join(
     FRAMEWORK_DIR, "bootloader", sd_name, sd_version,
