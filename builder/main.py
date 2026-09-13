@@ -347,9 +347,12 @@ elif upload_protocol.startswith("jlink"):
             makedirs(build_dir)
         script_path = join(build_dir, "upload.jlink")
         commands = ["h"]
-        if "DFUBOOTHEX" in env:
+        if str(source).endswith(".hex"):
+            # SoftDevice-merged application hex carries its own addresses
+            commands.append('loadfile "%s"' % source)
+        elif "DFUBOOTHEX" in env:
             commands.append('loadbin "%s",%s' % (str(source).replace("_signature", ""),
-                env.BoardConfig().get("upload.offset_address", "0x26000")))
+                env.BoardConfig().get("upload.offset_address", "0x1000")))
             commands.append('loadbin "%s",%s' % (source, env.get("BOOT_SETTING_ADDR")))
         else:
             commands.append('loadbin "%s",%s' % (source, env.BoardConfig().get(
