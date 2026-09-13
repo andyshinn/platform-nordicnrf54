@@ -133,7 +133,7 @@ if "nrfutil" == upload_protocol or (
                     "dfu",
                     "genpkg",
                     "--dev-type",
-                    "0x0052",
+                    "0x0054",
                     "--sd-req",
                     board.get("build.softdevice.sd_fwid"),
                     "--application",
@@ -208,7 +208,7 @@ target_buildprog = env.Alias("buildprog", target_firm, target_firm)
 
 if "DFUBOOTHEX" in env:
     env.Append(
-        BOOT_SETTING_ADDR=board.get("build.bootloader.settings_addr", "0x7F000")
+        BOOT_SETTING_ADDR=board.get("build.bootloader.settings_addr", "0x14F000")
     )
 
     # The DFU package wraps the plain application hex. When a SoftDevice

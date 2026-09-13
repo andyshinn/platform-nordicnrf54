@@ -19,7 +19,7 @@
       "sd_fwid": "0x3024"
     },
     "bootloader": {
-      "settings_addr": "0x07F000"
+      "settings_addr": "0x04F000"
     }
   },
   "connectivity": [
