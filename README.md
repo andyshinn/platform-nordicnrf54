@@ -1,6 +1,6 @@
 # Nordic nRF54L: development platform for [PlatformIO](https://platformio.org)
 
-[![Build Status](https://github.com/caveman99/platform-nordicnrf54/workflows/Examples/badge.svg)](https://github.com/caveman99/platform-nordicnrf54/actions)
+[![Build Status](https://github.com/meshtastic/platform-nordicnrf54/workflows/Examples/badge.svg)](https://github.com/meshtastic/platform-nordicnrf54/actions)
 
 The nRF54L Series features Cortex-M33 processors at 128 MHz with RRAM-based non-volatile memory, providing a highly capable platform for Bluetooth Low Energy applications. Supported MCUs: nRF54L05, nRF54L10, nRF54L15.
 
@@ -17,15 +17,15 @@ SoftDevice, not Nordic's Zephyr-based SDK.
 
 ```ini
 [env:development]
-platform = https://github.com/caveman99/platform-nordicnrf54.git
+platform = https://github.com/meshtastic/platform-nordicnrf54.git
 board = nrf54l15dk
 framework = arduino
 ```
 
 On first build, PlatformIO pulls the toolchain, the Arduino core from
-[caveman99/nRF54_Arduino](https://github.com/caveman99/nRF54_Arduino),
+[meshtastic/nRF54_Arduino](https://github.com/meshtastic/nRF54_Arduino),
 and the DFU bootloader from
-[caveman99/nRF54_Bootloader](https://github.com/caveman99/nRF54_Bootloader).
+[meshtastic/nRF54_Bootloader](https://github.com/meshtastic/nRF54_Bootloader).
 
 ## Boards
 

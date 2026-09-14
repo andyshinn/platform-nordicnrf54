@@ -18,8 +18,8 @@ not from the PlatformIO Registry.
 
 | Repo | Role | PIO package |
 |---|---|---|
-| [`caveman99/nRF54_Arduino`](https://github.com/caveman99/nRF54_Arduino) | Arduino core / framework source, s145 SoftDevice headers + hex | `framework-arduinoadafruitnrf54` |
-| [`caveman99/nRF54_Bootloader`](https://github.com/caveman99/nRF54_Bootloader) | DFU bootloader source + per-board hex | `framework-arduinoadafruitnrf54-bootloader` |
+| [`meshtastic/nRF54_Arduino`](https://github.com/meshtastic/nRF54_Arduino) | Arduino core / framework source, s145 SoftDevice headers + hex | `framework-arduinoadafruitnrf54` |
+| [`meshtastic/nRF54_Bootloader`](https://github.com/meshtastic/nRF54_Bootloader) | DFU bootloader source + per-board hex | `framework-arduinoadafruitnrf54-bootloader` |
 
 Both are referenced as git URLs pinned to release tags (`#vX.Y.Z`) in
 `platform.json` and are **public** — PIO clones them with no
