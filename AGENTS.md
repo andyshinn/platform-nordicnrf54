@@ -61,10 +61,8 @@ bootloader-side.
 ### Build script chain
 
 `platform.json` points the `arduino` framework at
-`builder/frameworks/arduino.py`, which is a one-line shim that
-`SConscript`s `builder/frameworks/arduino/adafruit.py` — that's the
-real framework build script (CCFLAGS, CPPPATH, LINKFLAGS, the
-`BuildLibrary` calls). `builder/main.py` owns post-build: ELF→hex,
+`builder/frameworks/arduino/adafruit.py` — the framework build script
+(CCFLAGS, CPPPATH, LINKFLAGS, the `BuildLibrary` calls). `builder/main.py` owns post-build: ELF→hex,
 SoftDevice merge, DFU packaging, and the `upload` / `softdevice` /
 `bootloader` targets.
 
@@ -133,8 +131,7 @@ platform.json     - package set: framework, bootloader, toolchain, upload tools
 platform.py       - PlatformIO platform class (board/upload tool wiring)
 builder/
   frameworks/
-    arduino.py       - shim -> SConscripts arduino/adafruit.py
-    arduino/adafruit.py  - the real framework build: CCFLAGS, CPPPATH,
+    arduino/adafruit.py  - the framework build: CCFLAGS, CPPPATH,
                            force-include, BuildLibrary(cores + variant),
                            SoftDevice + bootloader hex resolution
     _bare.py         - bare-metal (no-framework) build

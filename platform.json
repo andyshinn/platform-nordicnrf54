@@ -24,7 +24,7 @@
   "frameworks": {
     "arduino": {
       "package": "framework-arduinoadafruitnrf54",
-      "script": "builder/frameworks/arduino.py"
+      "script": "builder/frameworks/arduino/adafruit.py"
     }
   },
   "packages": {
