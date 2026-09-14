@@ -21,11 +21,11 @@ not from the PlatformIO Registry.
 | [`caveman99/nRF54_Arduino`](https://github.com/caveman99/nRF54_Arduino) | Arduino core / framework source, s145 SoftDevice headers + hex | `framework-arduinoadafruitnrf54` |
 | [`caveman99/nRF54_Bootloader`](https://github.com/caveman99/nRF54_Bootloader) | DFU bootloader source + per-board hex | `framework-arduinoadafruitnrf54-bootloader` |
 
-Both are referenced as git URLs in `platform.json` and are **public** —
-PIO clones them with no authentication. PIO re-clones the framework at
-its current default-branch HEAD on every fresh CI runner (`--depth 1`,
-no cross-run cache), so a framework fix is picked up by a platform CI
-re-run without any platform-side change.
+Both are referenced as git URLs pinned to release tags (`#vX.Y.Z`) in
+`platform.json` and are **public** — PIO clones them with no
+authentication. A framework or bootloader fix reaches consumers only
+after a new tag there and a pin bump here; bump the platform version in
+the same commit so PlatformIO refreshes its cached copy.
 
 ## Project conventions
 
@@ -101,9 +101,11 @@ negative suffixes `+nofp`/`+nodsp` are accepted). Use bare
   `{BOOTLOADER_DIR}/release/<variant>_bootloader.hex`
   → `env["DFUBOOTHEX"]`
 
-`main.py` flashes / merges them as two separate steps; they are NOT
-pre-merged. The bootloader repo's master is source-only — hex files
-only exist on its release tags, under `release/`.
+`main.py` merges both into `firmware.hex` after the build
+(`MERGEBOOTHEX`), so one file boots a blank chip; `userfirmware.hex` stays
+the plain application image for DFU packages (`--dev-type 0x0054`). The
+bootloader repo's master is source-only — hex files only exist on its
+release tags, under `release/`.
 
 ### Variant name is a three-repo lockstep contract
 
@@ -136,8 +138,9 @@ builder/
                            force-include, BuildLibrary(cores + variant),
                            SoftDevice + bootloader hex resolution
     _bare.py         - bare-metal (no-framework) build
-  main.py           - post-build: ELF->hex, MergeHex, DFU packaging,
-                      upload / softdevice / bootloader targets
+  main.py           - post-build: ELF->hex, SoftDevice + bootloader merge,
+                      DFU packaging, upload (jlink / nrfjprog / nrfutil / pyocd),
+                      softdevice / bootloader targets
 boards/             - five board JSONs (nrf54l{15,10,05}dk, xiao_nrf54l15(_sense))
 examples/           - arduino-blink, arduino-ble-led, arduino-ble-uart
                       (also the CI matrix)

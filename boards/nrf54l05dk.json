@@ -51,7 +51,6 @@
       "nrfutil",
       "pyocd"
     ],
-    "use_1200bps_touch": true,
     "require_upload_port": true,
     "wait_for_upload_port": true
   },
