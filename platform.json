@@ -20,7 +20,7 @@
     "type": "git",
     "url": "https://github.com/caveman99/platform-nordicnrf54.git"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "frameworks": {
     "arduino": {
       "package": "framework-arduinoadafruitnrf54",
@@ -36,7 +36,7 @@
     "framework-arduinoadafruitnrf54": {
       "type": "framework",
       "optional": true,
-      "version": "https://github.com/caveman99/nRF54_Arduino.git#v0.2.0"
+      "version": "https://github.com/caveman99/nRF54_Arduino.git#v0.2.1"
     },
     "framework-arduinoadafruitnrf54-bootloader": {
       "type": "framework",
