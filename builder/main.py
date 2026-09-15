@@ -327,8 +327,7 @@ if "DFUBOOTHEX" in env:
         # bootloader settings word into a single image and flash it in a
         # single debug session, rather than the incremental
         # bootloader-then-softdevice dance the nrfjprog path uses.
-        settings_addr = int(
-            board.get("build.bootloader.settings_addr", "0x7F000"), 16)
+        settings_addr = int(env.subst("$BOOT_SETTING_ADDR"), 16)
         bootstrap_hex = join("$BUILD_DIR", "bootstrap.hex")
 
         merge_cmd = ['"%s"' % SRECCAT]
@@ -514,7 +513,7 @@ elif upload_protocol.startswith("jlink"):
             commands.append('loadfile "%s"' % source)
         elif "DFUBOOTHEX" in env:
             commands.append('loadbin "%s",%s' % (str(source).replace("_signature", ""),
-                env.BoardConfig().get("upload.offset_address", "0x1000")))
+                env.BoardConfig().get("upload.offset_address", "0x8000")))
             commands.append('loadbin "%s",%s' % (source, env.get("BOOT_SETTING_ADDR")))
         else:
             commands.append('loadbin "%s",%s' % (source, env.BoardConfig().get(
@@ -546,10 +545,10 @@ elif use_swd_probe:
     # "cmsis-dap" OpenOCD debug tool for any board listing that protocol, and
     # tool-openocd ships no nRF54L flash driver, so it cannot program the part.
     if use_pyocd:
-        # $SOURCE is the SoftDevice-merged firmware.hex. It leaves the
-        # bootloader (0x0 and 0x1D0000+) and the settings page untouched -
-        # nothing in the image lands in those pages - so an upload onto a
-        # part prepared with `-t bootloader` keeps it bootable.
+        # $SOURCE is firmware.hex: bootloader + application + SoftDevice.
+        # Nothing in it lands in the bootloader settings page (or LittleFS
+        # below it), so an upload onto a part prepared with `-t bootloader`
+        # keeps the CRC-check-off settings word and stays bootable.
         env.Replace(UPLOADCMD=PyocdCmd("--reset", '"$SOURCE"'))
         upload_actions = [
             env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE"),

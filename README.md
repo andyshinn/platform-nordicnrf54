@@ -60,10 +60,19 @@ pio run -t upload         # the application (SoftDevice-merged firmware.hex)
 ```
 
 Run `-t bootloader` once on a fresh board, then `-t upload` for day-to-day
-work. The two are deliberately disjoint in RRAM — `-t bootloader` owns
-`0x0`, `0x1D0000–0x1D7C48` and the settings page at `0x1D9000`, while
-`firmware.hex` covers only `0x1000–<app end>` and the SoftDevice at
-`0x1DA800+` — so an upload never disturbs the bootloader.
+work. The nRF54LM20A layout has no MBR:
+
+| RRAM | Contents |
+|---|---|
+| `0x000000–0x008000` | bootloader |
+| `0x008000–0x1C9000` | application |
+| `0x1C9000–0x1D1000` | LittleFS |
+| `0x1D1000` | bootloader settings page |
+| `0x1DA800+` | SoftDevice s145 |
+
+`firmware.hex` carries the bootloader, the application and the SoftDevice,
+but nothing in the settings page or LittleFS, so an upload keeps the
+settings word `-t bootloader` wrote and leaves the filesystem alone.
 
 `-t bootloader` is a **single** operation. The part re-locks debug access on
 every power cycle while no valid firmware is running, so flashing the

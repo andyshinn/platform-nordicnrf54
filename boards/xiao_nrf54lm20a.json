@@ -20,7 +20,7 @@
       "sd_fwid": "0x310D"
     },
     "bootloader": {
-      "settings_addr": "0x1D9000"
+      "settings_addr": "0x1D1000"
     }
   },
   "connectivity": [
@@ -40,8 +40,9 @@
   ],
   "name": "Seeed XIAO nRF54LM20A",
   "upload": {
-    "maximum_ram_size": 505856,
-    "maximum_size": 1859584,
+    "maximum_ram_size": 243328,
+    "maximum_size": 1839104,
+    "offset_address": "0x8000",
     "speed": 115200,
     "protocol": "cmsis-dap",
     "protocols": [
