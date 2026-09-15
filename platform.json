@@ -41,7 +41,7 @@
     "framework-arduinoadafruitnrf54-bootloader": {
       "type": "framework",
       "optional": true,
-      "version": "https://github.com/andyshinn/nRF54_Bootloader.git#v0.2.3"
+      "version": "https://github.com/andyshinn/nRF54_Bootloader.git#v0.4.0"
     },
     "framework-cmsis": {
       "type": "framework",
