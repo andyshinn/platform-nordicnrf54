@@ -40,10 +40,12 @@ and the DFU bootloader from
 
 ## Uploading
 
-The DK boards and the XIAO nRF54L15 default to `upload_protocol = nrfutil`
-— serial DFU into the Adafruit-style bootloader from
-[caveman99/nRF54_Bootloader](https://github.com/caveman99/nRF54_Bootloader).
-That assumes the bootloader is already on the chip.
+The DK boards default to `upload_protocol = nrfutil` — serial DFU into the
+Adafruit-style bootloader from
+[meshtastic/nRF54_Bootloader](https://github.com/meshtastic/nRF54_Bootloader).
+That assumes the bootloader is already on the chip. The XIAO nRF54L15 boards
+default to `upload_protocol = pyocd`, which goes through the same RRAMC
+helper described below.
 
 A **stock Seeed XIAO nRF54LM20A is not in that state**, and has no way to
 get there over USB: out of the box it enumerates only as

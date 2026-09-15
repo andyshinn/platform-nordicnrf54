@@ -501,18 +501,6 @@ elif upload_protocol == "nrfutil":
         env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE")
     ]
 
-elif upload_protocol == "pyocd":
-    env.Replace(
-        UPLOADER="pyocd",
-        UPLOADERFLAGS=[
-            "load",
-            "--target", board.get("debug.pyocd_target", "nrf54l"),
-            "--erase", "sector",
-        ],
-        UPLOADCMD="$UPLOADER $UPLOADERFLAGS $SOURCE"
-    )
-    upload_actions = [env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE")]
-
 elif upload_protocol.startswith("jlink"):
 
     def _jlink_cmd_script(env, source):
