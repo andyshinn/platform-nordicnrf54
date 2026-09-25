@@ -73,8 +73,8 @@ use_swd_probe = use_pyocd or use_probe_rs
 
 # Both tools name parts their own way - probe-rs as Nordic does
 # ("nRF54LM20A"), pyocd in lower case ("nrf54lm20a") - and neither matches
-# build.mcu ("nrf54lm20") or the variant, so boards wired to a CMSIS-DAP
-# probe declare the names explicitly.
+# the variant, so boards wired to a CMSIS-DAP probe declare the names
+# explicitly.
 probe_rs_chip = board.get("upload.probe_rs_chip", "")
 pyocd_target = board.get("upload.pyocd_target", "")
 # RRAMC base address, from NRF_RRAMC_S_BASE in the MDK headers: 0x5004B000

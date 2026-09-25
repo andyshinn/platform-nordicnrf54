@@ -7,7 +7,7 @@
     "cpu": "cortex-m33",
     "extra_flags": "-DARDUINO_XIAO_NRF54LM20A -DNRF54LM20A_XXAA",
     "f_cpu": "128000000L",
-    "mcu": "nrf54lm20",
+    "mcu": "nrf54lm20a",
     "mcu_define": "NRF54LM20A_XXAA",
     "variant": "xiao_nrf54lm20a",
     "bsp": {
@@ -17,7 +17,9 @@
       "sd_flags": "-DS145",
       "sd_name": "s145",
       "sd_version": "10.0.1",
-      "sd_fwid": "0x310D"
+      "sd_fwid": "0x310D",
+      "sd_family": "nrf54lm",
+      "sd_soc": "nrf54lm20"
     },
     "bootloader": {
       "settings_addr": "0x1D1000"
