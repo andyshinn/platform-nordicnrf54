@@ -43,18 +43,23 @@
   "upload": {
     "maximum_ram_size": 172928,
     "maximum_size": 1371136,
+    "offset_address": "0x8000",
     "speed": 115200,
-    "protocol": "pyocd",
+    "protocol": "cmsis-dap",
     "protocols": [
+      "cmsis-dap",
+      "pyocd",
+      "probe-rs",
       "jlink",
       "nrfjprog",
-      "nrfutil",
-      "pyocd"
+      "nrfutil"
     ],
-    "require_upload_port": true,
-    "wait_for_upload_port": true,
-    "rramc_base": "0x5004B000",
-    "pyocd_target": "nrf54l"
+    "probe_rs_chip": "nRF54L15",
+    "use_1200bps_touch": false,
+    "require_upload_port": false,
+    "wait_for_upload_port": false,
+    "pyocd_target": "nrf54l",
+    "rramc_base": "0x5004B000"
   },
   "url": "https://www.seeedstudio.com/",
   "vendor": "Seeed"

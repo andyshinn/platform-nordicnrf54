@@ -354,8 +354,9 @@ def main(argv):
         })
     if session is None:
         sys.stderr.write(
-            "Error: no CMSIS-DAP probe found. The XIAO nRF54LM20A's onboard "
-            "probe enumerates as USB 2886:0068.\n")
+            "Error: no CMSIS-DAP probe found. The XIAO boards' onboard SAMD11 "
+            "probe enumerates as a Seeed (VID 2886) CMSIS-DAP device; on the "
+            "XIAO nRF54LM20A that is 2886:0068.\n")
         return 1
 
     with session:

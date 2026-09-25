@@ -43,14 +43,13 @@ and the DFU bootloader from
 The DK boards default to `upload_protocol = nrfutil` — serial DFU into the
 Adafruit-style bootloader from
 [meshtastic/nRF54_Bootloader](https://github.com/meshtastic/nRF54_Bootloader).
-That assumes the bootloader is already on the chip. The XIAO nRF54L15 boards
-default to `upload_protocol = pyocd`, which goes through the same RRAMC
-helper described below.
+That assumes the bootloader is already on the chip.
 
-A **stock Seeed XIAO nRF54LM20A is not in that state**, and has no way to
-get there over USB: out of the box it enumerates only as
-`Seeed Studio XIAO nRF54LM20A CMSIS-DAP` (VID `0x2886`, PID `0x0068`) — an
-onboard SAMD11 debug probe, not a DFU serial port. It therefore defaults to
+A **stock Seeed XIAO (nRF54L15, nRF54L15 Sense or nRF54LM20A) is not in that
+state**, and has no way to get there over USB: out of the box the USB port
+belongs to an onboard SAMD11 CMSIS-DAP probe (the XIAO nRF54LM20A enumerates
+as `Seeed Studio XIAO nRF54LM20A CMSIS-DAP`, VID `0x2886`, PID `0x0068`), not
+to a DFU serial port. The XIAO boards therefore default to
 `upload_protocol = cmsis-dap`, and everything goes over SWD through that
 probe:
 
@@ -60,15 +59,15 @@ pio run -t upload         # the application (SoftDevice-merged firmware.hex)
 ```
 
 Run `-t bootloader` once on a fresh board, then `-t upload` for day-to-day
-work. The nRF54LM20A layout has no MBR:
+work. Neither layout has an MBR:
 
-| RRAM | Contents |
-|---|---|
-| `0x000000–0x008000` | bootloader |
-| `0x008000–0x1C9000` | application |
-| `0x1C9000–0x1D1000` | LittleFS |
-| `0x1D1000` | bootloader settings page |
-| `0x1DA800+` | SoftDevice s145 |
+| RRAM | nRF54LM20A | nRF54L15 |
+|---|---|---|
+| bootloader | `0x000000–0x008000` | `0x000000–0x008000` |
+| application | `0x008000–0x1C9000` | `0x008000–0x147000` |
+| LittleFS | `0x1C9000–0x1D1000` | `0x147000–0x14E000` |
+| bootloader settings page | `0x1D1000` | `0x14F000` |
+| SoftDevice s145 | `0x1DA800+` | `0x15A800+` |
 
 `firmware.hex` carries the bootloader, the application and the SoftDevice,
 but nothing in the settings page or LittleFS, so an upload keeps the
@@ -87,7 +86,7 @@ unlocked and running.
 
 | `upload_protocol` | Tool | Notes |
 |---|---|---|
-| `cmsis-dap` (default on `xiao_nrf54lm20a`), `pyocd` | pyocd | Needs `upload.pyocd_target` and `upload.rramc_base` in the board JSON |
+| `cmsis-dap` (default on the XIAO boards), `pyocd` | pyocd | Needs `upload.pyocd_target` and `upload.rramc_base` in the board JSON |
 | `probe-rs` | probe-rs | Needs `upload.probe_rs_chip`; probe-rs ≥ 0.32 on `PATH` |
 | `jlink`, `nrfjprog` | J-Link / nrfjprog | External probe on the SWD pads; the DK path, unchanged |
 | `nrfutil` | adafruit-nrfutil | Serial DFU, once the bootloader is installed |
@@ -142,13 +141,13 @@ The script finds pyocd on its own: `$PYOCD_PYTHON` (or
 visible to one of those is enough.
 
 Once the bootloader is installed, `upload_protocol = nrfutil` DFU also works.
-`use_1200bps_touch` is `false` for `xiao_nrf54lm20a`: the SAMD11 owns USB, so
-touching its CDC port at 1200 baud cannot reset the nRF54LM20A into DFU. Enter
+`use_1200bps_touch` is `false` on the XIAO boards: the SAMD11 owns USB, so
+touching its CDC port at 1200 baud cannot reset the nRF54 into DFU. Enter
 DFU with a double-tap of reset instead.
 
 ### Debugging
 
-`cmsis-dap` is the default debug tool for `xiao_nrf54lm20a` and works over
+`cmsis-dap` is the default debug tool for the XIAO boards and works over
 the onboard probe with `pio debug`. Note that OpenOCD can only attach to
 and debug code already resident in RRAM — `tool-openocd` ships no nRF54L
 flash driver, so it cannot program the part. Use `jlink` with an external
